@@ -16,7 +16,7 @@ module Delayed::Plugins::Raven
           })
         rescue Exception => e
           Rails.logger.error "Raven logging failed: #{e.class.name}: #{e.message}"
-          Rails.logger.flush
+          Rails.logger.flush if Rails.logger.respond_to? :flush
         end
         super if defined?(super)
       end
@@ -51,9 +51,20 @@ module Delayed::Plugins::Raven
 
     callbacks do |lifecycle|
       lifecycle.before(:invoke_job) do |job|
-        payload = job.payload_object
-        payload = payload.object if payload.is_a? Delayed::PerformableMethod
-        payload.extend Notify
+        begin
+          payload = job.payload_object
+          payload = payload.object if payload.is_a? Delayed::PerformableMethod
+          payload.extend Notify
+        rescue Exception => error
+          begin
+            ::Raven.capture_exception(error, {
+              configuration: ::Delayed::Plugins::Raven.raven_configuration
+            })
+          rescue Exception => e
+            Rails.logger.error "Raven logging failed: #{e.class.name}: #{e.message}"
+            Rails.logger.flush if Rails.logger.respond_to? :flush
+          end
+        end
       end
     end
   end
